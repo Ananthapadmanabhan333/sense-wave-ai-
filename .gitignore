@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.local
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.pgdata/
+*.log
+public/.gitkeep.bak
+*.tsbuildinfo
+
+# Local briefing docs — not published
+SenseWave-build-prompt.md

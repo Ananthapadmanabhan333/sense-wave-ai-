@@ -1,0 +1,109 @@
+# SenseWave AI -- full stack, one command.
+#
+#   docker compose -f infra/docker-compose.yml --env-file .env up
+#
+# RuView runs with --source simulate so the whole stack works with zero
+# hardware. It is consumed over the network and never forked or vendored.
+
+name: sensewave
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sensewave}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sensewave}
+      POSTGRES_DB: ${POSTGRES_DB:-sensewave}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sensewave}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Upstream RuView. Unmodified, consumed over REST + WS.
+  #
+  # The README quickstart for this image maps port 3000; the flags below bind
+  # the documented 8080/8765/5005 explicitly rather than trusting a default.
+  # Confirm the actual exposed ports on first run and record any difference in
+  # docs/ARCHITECTURE.md.
+  sensing-server:
+    image: ruvnet/wifi-densepose:latest
+    command:
+      - sensing-server
+      - --bind-addr=0.0.0.0
+      - --http-port=8080
+      - --ws-port=8765
+      - --udp-port=5005
+      - --source=simulate
+      - --tick-ms=100
+    environment:
+      SENSING_BIND_ADDR: 0.0.0.0
+      RUVIEW_API_TOKEN: ${RUVIEW_API_TOKEN:-}
+    ports:
+      - "${RUVIEW_HTTP_PORT:-8080}:8080"
+      - "${RUVIEW_WS_PORT:-8765}:8765"
+      - "${RUVIEW_UDP_PORT:-5005}:5005/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/v1/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sensing-server:
+        condition: service_started
+    environment:
+      SENSEWAVE_DATABASE_URL: >-
+        postgresql+asyncpg://${POSTGRES_USER:-sensewave}:${POSTGRES_PASSWORD:-sensewave}@postgres:5432/${POSTGRES_DB:-sensewave}
+      SENSEWAVE_UPSTREAM_WS_URL: ws://sensing-server:8765/ws/sensing
+      SENSEWAVE_UPSTREAM_HTTP_URL: http://sensing-server:8080
+      SENSEWAVE_UPSTREAM_TOKEN: ${SENSEWAVE_UPSTREAM_TOKEN:-}
+      RUVIEW_API_TOKEN: ${RUVIEW_API_TOKEN:-}
+      SENSEWAVE_JWT_SECRET: ${SENSEWAVE_JWT_SECRET:-change-me-in-production}
+      SENSEWAVE_ADMIN_EMAIL: ${SENSEWAVE_ADMIN_EMAIL:-admin@sensewave.local}
+      SENSEWAVE_ADMIN_PASSWORD: ${SENSEWAVE_ADMIN_PASSWORD:-change-me}
+      SENSEWAVE_INGEST_HZ: ${SENSEWAVE_INGEST_HZ:-1.0}
+      SENSEWAVE_STALE_AFTER_SECONDS: ${SENSEWAVE_STALE_AFTER_SECONDS:-10.0}
+      SENSEWAVE_MIN_VITALS_CONFIDENCE: ${SENSEWAVE_MIN_VITALS_CONFIDENCE:-0.5}
+      # Zero-hardware demo: seed a Room 1 and let discovered simulate nodes
+      # land in it, so /api/rooms/1/latest has data on first boot. Set
+      # SENSEWAVE_AUTO_MAP_ROOM_ID empty in a real deployment and map nodes
+      # deliberately instead.
+      SENSEWAVE_SEED_DEMO: ${SENSEWAVE_SEED_DEMO:-true}
+      SENSEWAVE_AUTO_MAP_ROOM_ID: ${SENSEWAVE_AUTO_MAP_ROOM_ID:-1}
+      SENSEWAVE_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${SENSEWAVE_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_SENSEWAVE_API_URL: ${NEXT_PUBLIC_SENSEWAVE_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_SENSEWAVE_WS_URL: ${NEXT_PUBLIC_SENSEWAVE_WS_URL:-ws://localhost:8000/api/ws/live}
+    ports:
+      - "${SENSEWAVE_WEB_PORT:-3000}:3000"
+
+volumes:
+  pgdata:

@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sensewave-backend"
+version = "0.1.0"
+description = "SenseWave AI backend — consumes RuView sensing-server, persists, reasons, serves."
+requires-python = ">=3.11"
+
+dependencies = [
+  "fastapi>=0.115",              # REST + WS app framework
+  "uvicorn[standard]>=0.30",     # ASGI server
+  "sqlalchemy[asyncio]>=2.0",    # async ORM / core
+  "asyncpg>=0.29",               # async Postgres driver
+  "alembic>=1.13",               # schema migrations
+  "pydantic>=2.7",               # frame + API validation
+  "pydantic-settings>=2.3",      # env-var config binding
+  "websockets>=12",              # upstream WS transport (auth header on upgrade)
+  "httpx>=0.27",                 # upstream REST calls (calibration/recording, Phase 4)
+  "python-jose[cryptography]>=3.3",  # JWT sign/verify for SenseWave's own auth
+  "bcrypt>=4.1",                 # admin password hashing (passlib 1.7 is broken on bcrypt>=4.1)
+  "structlog>=24.1",             # structured logs; ingest state changes must be greppable
+]
+
+[project.optional-dependencies]
+# The upstream client. Only published as a pre-release (2.0.0a1), so an
+# explicit pin is required — a bare `pip install ruview[client]` resolves
+# to nothing. See docs/ARCHITECTURE.md "Upstream contract discrepancies".
+upstream = ["ruview[client]==2.0.0a1"]
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "psycopg[binary]>=3.1",  # sync driver for Alembic (asyncpg cannot run migrations)
+  "pgserver>=0.1.4",  # embedded Postgres for tests on machines without Docker
+]
+
+[tool.setuptools.packages.find]
+include = ["sensewave*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:sensewave.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# B008 flags function calls in argument defaults, which is exactly how FastAPI
+# declares dependencies and query params. Not a defect here.
+"sensewave/api/*.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = []
+disallow_untyped_defs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["ruview.*", "wifi_densepose.*", "pgserver.*", "jose.*"]
+ignore_missing_imports = true

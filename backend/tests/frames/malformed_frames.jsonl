@@ -1,0 +1,4 @@
+{"type": "sensing_update", "timestamp": "not-a-number", "source": "simulate", "tick": 1}
+{"type": "sensing_update", "timestamp": 1767225600.0, "source": "simulate"}
+{"type": "sensing_update", "timestamp": 1767225600.0, "source": "simulate", "tick": 2, "classification": {"motion_level": "low", "presence": "yes", "confidence": 0.9}}
+{"type": "sensing_update", "timestamp": 1767225600.0, "source": "simulate", "tick": 3, "classification": {"motion_level": "low", "presence": true, "confidence": 4.2}}
